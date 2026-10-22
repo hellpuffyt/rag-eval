@@ -19,6 +19,9 @@ Edge-case conventions (documented explicitly since they are judgment calls):
   if a retriever returns fewer than ``k`` results, the missing slots count
   against it as non-relevant. If you want precision over "what was actually
   returned", pass ``k=len(retrieved_chunk_ids)``.
+- Duplicate ids in the retrieved list are ignored after their first
+  occurrence (as trec_eval does): retrieving the same relevant chunk twice
+  is not two hits. Without this, recall@k and nDCG@k could exceed 1.0.
 - MRR is computed over the full retrieved list by default (``k=None``), matching
   the standard definition of mean reciprocal rank. Pass ``k`` to restrict the
   search to the top-k results only.
@@ -27,6 +30,11 @@ Edge-case conventions (documented explicitly since they are judgment calls):
 from __future__ import annotations
 
 import math
+
+
+def _unique(retrieved_ids: list[str]) -> list[str]:
+    """Retrieved ids with later duplicates removed, rank order preserved."""
+    return list(dict.fromkeys(retrieved_ids))
 
 
 def _relevant_flags(retrieved_ids: list[str], gold_ids: set[str]) -> list[bool]:
@@ -42,7 +50,7 @@ def precision_at_k(retrieved_ids: list[str], gold_ids: list[str] | set[str], k: 
     if k <= 0:
         raise ValueError("k must be a positive integer")
     gold = set(gold_ids)
-    top_k = retrieved_ids[:k]
+    top_k = _unique(retrieved_ids)[:k]
     hits = sum(1 for rid in top_k if rid in gold)
     return hits / k
 
@@ -57,7 +65,7 @@ def recall_at_k(retrieved_ids: list[str], gold_ids: list[str] | set[str], k: int
     gold = set(gold_ids)
     if not gold:
         return 1.0
-    top_k = retrieved_ids[:k]
+    top_k = _unique(retrieved_ids)[:k]
     hits = sum(1 for rid in top_k if rid in gold)
     return hits / len(gold)
 
@@ -68,7 +76,8 @@ def mrr(retrieved_ids: list[str], gold_ids: list[str] | set[str], k: int | None 
     If ``k`` is given, only the top-k retrieved ids are searched.
     """
     gold = set(gold_ids)
-    candidates = retrieved_ids if k is None else retrieved_ids[:k]
+    unique = _unique(retrieved_ids)
+    candidates = unique if k is None else unique[:k]
     for rank, rid in enumerate(candidates, start=1):
         if rid in gold:
             return 1.0 / rank
@@ -100,7 +109,7 @@ def ndcg_at_k(retrieved_ids: list[str], gold_ids: list[str] | set[str], k: int) 
     gold = set(gold_ids)
     if not gold:
         return 1.0
-    relevance = [1.0 if rid in gold else 0.0 for rid in retrieved_ids]
+    relevance = [1.0 if rid in gold else 0.0 for rid in _unique(retrieved_ids)]
     dcg = dcg_at_k(relevance, k)
     ideal_relevance = [1.0] * min(len(gold), k) + [0.0] * max(0, k - len(gold))
     idcg = dcg_at_k(ideal_relevance, k)
@@ -119,5 +128,5 @@ def hit_rate_at_k(retrieved_ids: list[str], gold_ids: list[str] | set[str], k: i
     gold = set(gold_ids)
     if not gold:
         return 1.0
-    top_k = retrieved_ids[:k]
+    top_k = _unique(retrieved_ids)[:k]
     return 1.0 if any(rid in gold for rid in top_k) else 0.0

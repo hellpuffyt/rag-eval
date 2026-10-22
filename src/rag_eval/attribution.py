@@ -75,7 +75,7 @@ def classify_case(
         return AttributionResult(label=None, best_gold_rank=None, groundedness_score=None)
 
     best_rank: int | None = None
-    for rank, rid in enumerate(case.retrieved_chunk_ids, start=1):
+    for rank, rid in enumerate(dict.fromkeys(case.retrieved_chunk_ids), start=1):
         if rid in gold:
             best_rank = rank
             break
@@ -90,7 +90,7 @@ def classify_case(
             label="retrieval_rank", best_gold_rank=best_rank, groundedness_score=None
         )
 
-    top_k_ids = case.retrieved_chunk_ids[:k]
+    top_k_ids = list(dict.fromkeys(case.retrieved_chunk_ids))[:k]
     context = case.context_text(top_k_ids)
     result = evaluate_groundedness(case.answer, context, min_match_len=min_match_len)
 

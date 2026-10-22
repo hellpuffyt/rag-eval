@@ -79,6 +79,10 @@ recall@k = |{ids in retrieved[:k] : id in gold}| / |gold|
 If `gold` is empty, recall@k is defined as `1.0` (vacuously — there is
 nothing to find).
 
+Duplicate ids in `retrieved` are ignored after their first occurrence (as
+trec_eval does) for every metric, the attribution ranking and the context
+used for groundedness; otherwise recall@k and nDCG@k could exceed 1.
+
 ### MRR (mean reciprocal rank)
 
 Reciprocal rank of the first relevant id in the full retrieved list (0 if
@@ -157,11 +161,18 @@ around `report.evaluate_dataset`.
 
 ## Installation
 
+Not published on PyPI — and the PyPI name `rag-eval` belongs to an
+**unrelated project**, so `pip install rag-eval` installs something else.
+Install from a clone:
+
 ```bash
 python -m venv .venv
-./.venv/Scripts/python.exe -m pip install -e ".[dev]"   # Windows
-# source .venv/bin/activate && pip install -e ".[dev]"  # macOS / Linux
+.venv/bin/python -m pip install -e ".[dev]"             # macOS / Linux
+# .venv\Scripts\python.exe -m pip install -e ".[dev]"  # Windows
 ```
+
+The examples below assume the virtualenv is active (`source .venv/bin/activate`)
+or that you call `.venv/bin/rag-eval`.
 
 Runtime dependencies: none (standard library only). `[dev]` adds `pytest`,
 `ruff`, and `mypy` for development.
@@ -266,7 +277,7 @@ See Limitations below.
 ## Testing
 
 ```bash
-pytest            # 113 tests
+pytest            # 120 tests
 ruff check .
 mypy
 ```
@@ -274,7 +285,8 @@ mypy
 Metric tests use hand-computed expected values (see comments in
 `tests/test_retrieval_metrics.py`) and cover edge cases explicitly: `k`
 larger than the result set, no relevant documents, all documents relevant,
-ties, and empty inputs. `tests/test_attribution.py` exercises all three
+ties, and empty inputs; `tests/test_hand_computed_fixtures.py` adds worked
+examples with the arithmetic in comments. `tests/test_attribution.py` exercises all three
 failure directions plus the success path.
 
 ## Limitations
@@ -291,6 +303,9 @@ failure directions plus the success path.
   well-supported.
 - **Binary relevance only.** Retrieval metrics treat a chunk as either
   relevant or not; there is no support for graded relevance judgments.
+- **Tokenization** is Unicode letters/digits, lowercased. Languages written
+  without spaces (Chinese, Japanese, Thai) become one token per unbroken
+  run, so their groundedness is very coarse (usually all-or-nothing).
 - **No semantic matching.** Synonyms, abbreviations, and paraphrase are not
   recognized; "USA" and "United States" share zero overlapping tokens.
 - Use `rag-eval` to catch large, structural regressions (retrieval broke,
@@ -304,7 +319,9 @@ failure directions plus the success path.
 JSONL passed to it on the command line. Dataset files are parsed with the
 standard library `json` module. As with any tool that reads files by path,
 do not run it against untrusted dataset paths from an untrusted source
-without review.
+without review. Report security issues privately via
+[GitHub security advisories](https://github.com/hellpuffyt/rag-eval/security/advisories/new)
+(see [SECURITY.md](SECURITY.md)).
 
 ## License
 
