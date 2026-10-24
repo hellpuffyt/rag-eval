@@ -7,8 +7,8 @@ purpose; please keep changes in that spirit.
 
 ```bash
 python -m venv .venv
-./.venv/Scripts/python.exe -m pip install -e ".[dev]"   # Windows
-# source .venv/bin/activate && pip install -e ".[dev]"  # macOS / Linux
+.venv/bin/python -m pip install -e ".[dev]"            # macOS / Linux
+# .venv\Scripts\python.exe -m pip install -e ".[dev]"  # Windows
 ```
 
 ## Running the checks

@@ -105,7 +105,7 @@ def evaluate_case(
     min_match_len: int = DEFAULT_MIN_MATCH_LEN,
 ) -> CaseReport:
     """Compute all metrics for a single case."""
-    context = case.context_text(case.retrieved_chunk_ids[:k])
+    context = case.context_text(list(dict.fromkeys(case.retrieved_chunk_ids))[:k])
     grounding = evaluate_groundedness(case.answer, context, min_match_len=min_match_len)
     attribution = classify_case(
         case, k=k, groundedness_threshold=groundedness_threshold, min_match_len=min_match_len
