@@ -244,11 +244,11 @@ $ rag-eval examples/sample.jsonl -k 3 --per-case
 rag-eval report  (k=3, cases=8)
 
 Retrieval metrics
-  precision@3         0.2083
-  recall@3            0.5625
+  precision@3            0.2083
+  recall@3               0.5625
   mrr                    0.5000
-  ndcg@3              0.4844
-  hit_rate@3          0.6250
+  ndcg@3                 0.4844
+  hit_rate@3             0.6250
 
 Generation metrics
   groundedness           0.2924
@@ -277,7 +277,7 @@ See Limitations below.
 ## Testing
 
 ```bash
-pytest            # 120 tests
+pytest            # 121 tests
 ruff check .
 mypy
 ```
