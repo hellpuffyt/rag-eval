@@ -146,3 +146,12 @@ def test_format_case_table_lists_each_case() -> None:
     assert "c2" in text
     assert "success" in text
     assert "retrieval_miss" in text
+
+
+def test_format_table_aligns_metric_values_for_any_k() -> None:
+    cases = [make_case("c1", ["a"], ["a"], "matches a", {"a": "matches a"})]
+    for k in (1, 3, 10):
+        text = format_table(evaluate_dataset(cases, k=k))
+        value_lines = [ln for ln in text.splitlines() if ln.startswith("  ")]
+        columns = {ln.rstrip().rfind(" ") + 1 for ln in value_lines}
+        assert len(columns) == 1, (k, text)
