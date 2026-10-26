@@ -2,8 +2,20 @@
 
 Offline evaluation for retrieval-augmented generation (RAG) pipelines.
 `rag-eval` scores retrieval quality and answer groundedness separately, and
-tells you *which stage failed* when a case goes wrong — no API keys, no
+tells you *which stage failed* when a case goes wrong. No API keys, no
 model calls, no network access.
+
+**Status:** version 0.1.0, not on PyPI. Standard library only. CI runs the
+tests on Linux, macOS and Windows with Python 3.10 to 3.13. Groundedness is
+a lexical proxy, not a fact check (see [Limitations](#limitations)).
+
+## Demo
+
+<img src="docs/screenshots/sample-per-case-report.png" width="100%" alt="Terminal capture: rag-eval examples/sample.jsonl -k 3 --per-case prints retrieval metrics (precision@3 0.2083, recall@3 0.5625, mrr 0.5000, ndcg@3 0.4844, hit_rate@3 0.6250), generation metrics, failure attribution (2 success, 3 retrieval_miss, 0 retrieval_rank, 3 generation) and a per-case table for q1 to q8; a second command with --fail-under-recall 0.6 and --fail-under-groundedness 0.4 prints two GATE FAILED lines and exits 1.">
+
+*Real terminal capture on the bundled `examples/sample.jsonl`: the per-case
+report, then the same data used as a CI gate that fails on recall and
+groundedness. The full text is under [Examples](#examples).*
 
 ## What
 
@@ -47,7 +59,7 @@ requiring a second LLM call to judge the first one.
   it" failure mode directly, by measuring how much of the retrieved context
   the answer's matched spans actually cover.
 - **Failure attribution**, the standout feature: every case is classified as
-  a retrieval miss, a retrieval ranking problem, or a generation problem —
+  a retrieval miss, a retrieval ranking problem, or a generation problem,
   or a success.
 - **Fully offline.** Standard library only. No network calls, no API keys,
   nothing to configure.
@@ -76,7 +88,7 @@ Fraction of all relevant ids found within the top-k:
 recall@k = |{ids in retrieved[:k] : id in gold}| / |gold|
 ```
 
-If `gold` is empty, recall@k is defined as `1.0` (vacuously — there is
+If `gold` is empty, recall@k is defined as `1.0` (vacuously: there is
 nothing to find).
 
 Duplicate ids in `retrieved` are ignored after their first occurrence (as
@@ -131,10 +143,10 @@ chunk means the generator ignored good context.
 
 For each case with at least one gold-relevant chunk:
 
-1. **`retrieval_miss`** — no gold chunk id appears anywhere in `retrieved`.
-2. **`retrieval_rank`** — a gold chunk was retrieved, but only beyond the
+1. **`retrieval_miss`**: no gold chunk id appears anywhere in `retrieved`.
+2. **`retrieval_rank`**: a gold chunk was retrieved, but only beyond the
    cutoff `k`.
-3. **`generation`** — a gold chunk was retrieved within the top-k, but the
+3. **`generation`**: a gold chunk was retrieved within the top-k, but the
    answer's groundedness score against that top-k context is below
    `--groundedness-threshold` (default 0.5).
 4. Otherwise the case is a **success**.
@@ -161,11 +173,12 @@ around `report.evaluate_dataset`.
 
 ## Installation
 
-Not published on PyPI — and the PyPI name `rag-eval` belongs to an
+Not published on PyPI, and the PyPI name `rag-eval` belongs to an
 **unrelated project**, so `pip install rag-eval` installs something else.
-Install from a clone:
+Install from a clone (Python 3.10 or newer):
 
 ```bash
+git clone https://github.com/hellpuffyt/rag-eval && cd rag-eval
 python -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]"             # macOS / Linux
 # .venv\Scripts\python.exe -m pip install -e ".[dev]"  # Windows
@@ -203,7 +216,46 @@ Key flags:
 | `--fail-under-precision/-recall/-mrr/-ndcg/-hit-rate/-groundedness/-context-utilization` | none | Exit code `1` if the dataset mean is below the given value. |
 
 Exit codes: `0` success, `1` a `--fail-under-*` gate failed, `2` a dataset or
-argument error.
+argument error. Gate failures are printed to stderr as `GATE FAILED: ...`
+lines, so they still show when stdout goes to a file.
+
+## Library usage
+
+The package exports little from `rag_eval` itself; import from the modules.
+Run from the repository root:
+
+```python
+from rag_eval.groundedness import evaluate_groundedness
+from rag_eval.io import load_dataset
+from rag_eval.report import evaluate_dataset
+
+report = evaluate_dataset(load_dataset("examples/sample.jsonl"), k=3)
+print(f"recall@3={report.mean_recall:.4f} generation failures={report.num_generation_failure}")
+for case in report.cases:
+    if case.attribution.label is not None:   # None means success
+        print(case.id, case.attribution.label, case.unsupported_spans)
+
+g = evaluate_groundedness(
+    "The tower was finished in 1889 and painted gold.",
+    "The Eiffel Tower was finished in 1889 for the World's Fair.",
+)
+print(round(g.score, 3), g.unsupported_spans)
+```
+
+Output:
+
+```
+recall@3=0.5625 generation failures=3
+q2 retrieval_miss ['Water boils at 100 degrees Celsius at sea level atmospheric pressure']
+q4 generation ['Tides are primarily caused', 'and to a lesser extent the Sun']
+q5 generation ["The capital of Australia is Sydney, the country's largest city"]
+q6 retrieval_miss ['The adult human body typically has 206 bones']
+q7 generation ['Python supports multiple programming paradigms, including', 'programming']
+q8 retrieval_miss ['The chemical symbol for gold is Au, derived from the Latin word aurum']
+0.556 ['The', 'and painted gold']
+```
+
+A successful case has `attribution.label` set to `None`.
 
 ## Dataset format
 
@@ -224,18 +276,19 @@ One JSON object per line (JSONL). Required fields:
 }
 ```
 
-- `retrieved_chunk_ids` — ranked, best result first. Required, may be empty.
-- `gold_chunk_ids` — relevant chunk ids for this question. Required, may be
-  empty (such a case always counts as a success — nothing to retrieve).
-- `chunk_texts` — mapping of chunk id to its text, for any chunk id you want
+- `retrieved_chunk_ids`: ranked, best result first. Required, may be empty.
+- `gold_chunk_ids`: relevant chunk ids for this question. Required, may be
+  empty (such a case always counts as a success, with nothing to retrieve).
+- `chunk_texts`: mapping of chunk id to its text, for any chunk id you want
   groundedness/utilization computed against. Only retrieved ids within the
   top-k need entries; missing text is silently skipped rather than erroring.
-- `retrieved_scores` — optional, must be the same length as
+- `retrieved_scores`: optional, must be the same length as
   `retrieved_chunk_ids` if present. Carried through for reference; ranking is
   always taken from list order, not from scores.
 
 See [`examples/sample.jsonl`](examples/sample.jsonl) for a full worked
-dataset covering a success, a retrieval miss, and a generation failure.
+dataset of eight cases covering successes, retrieval misses and generation
+failures (it has no `retrieval_rank` case at `k=3`).
 
 ## Examples
 
@@ -264,14 +317,28 @@ id              prec     rec     mrr    ndcg   hit   ground    util  label
 --------------------------------------------------------------------------
 q1             0.333   1.000   1.000   1.000  1.00    0.846   0.268  success
 q2             0.000   0.000   0.000   0.000  0.00    0.000   0.000  retrieval_miss
-...
+q3             0.333   1.000   0.500   0.631  1.00    0.600   0.182  success
+q4             0.333   0.500   1.000   0.613  1.00    0.476   0.370  generation
+q5             0.333   1.000   0.500   0.631  1.00    0.000   0.000  generation
+q6             0.000   0.000   0.000   0.000  0.00    0.000   0.000  retrieval_miss
+q7             0.333   1.000   1.000   1.000  1.00    0.417   0.135  generation
+q8             0.000   0.000   0.000   0.000  0.00    0.000   0.000  retrieval_miss
+$ rag-eval examples/sample.jsonl -k 3 \
+  --fail-under-recall 0.6 \
+  --fail-under-groundedness 0.4 > /dev/null; echo "exit $?"
+GATE FAILED: recall@k = 0.5625 is below threshold 0.6000 (--fail-under-recall)
+GATE FAILED: groundedness = 0.2924 is below threshold 0.4000 (--fail-under-groundedness)
+exit 1
 ```
 
 Note case `q3` in the example dataset: it scores as a `success` even though
 the answer is factually wrong (it names the wrong author). This is not a bug
-— it is the honest consequence of grounding being a *lexical* check: the
+but the consequence of grounding being a *lexical* check: the
 wrong-author sentence happens to share enough contiguous words with an
 irrelevant retrieved chunk to count as "supported" by *something* in context.
+Case `q5` (Sydney named as the capital) is also wrong; it is caught as a
+`generation` failure only because its wording shares no run of three tokens
+with the context.
 See Limitations below.
 
 ## Testing
@@ -289,13 +356,17 @@ ties, and empty inputs; `tests/test_hand_computed_fixtures.py` adds worked
 examples with the arithmetic in comments. `tests/test_attribution.py` exercises all three
 failure directions plus the success path.
 
+CI runs `pytest` on Ubuntu, macOS and Windows for Python 3.10 to 3.13,
+`ruff` and `mypy` on Linux, and a smoke job that runs the CLI on
+`examples/sample.jsonl` and checks that an unattainable gate exits non-zero.
+
 ## Limitations
 
 - **Groundedness is a lexical proxy, not entailment.** It measures textual
   overlap and contiguous-substring alignment, not logical support. It cannot
   detect that an answer contradicts its context if the contradiction reuses
-  the context's own words (see the `q3`/`q5` cases in the example dataset).
-  It cannot verify factual correctness at all — only whether the answer's
+  the context's own words (see the `q3` case in the example dataset).
+  It cannot verify factual correctness at all, only whether the answer's
   wording is traceable to *some* retrieved text.
 - **Word-order sensitive.** The alignment matches contiguous token runs, so
   a fact restated with the same words in a different order (or paraphrased)
@@ -310,7 +381,7 @@ failure directions plus the success path.
   recognized; "USA" and "United States" share zero overlapping tokens.
 - Use `rag-eval` to catch large, structural regressions (retrieval broke,
   generation stopped using context, answers became mostly fabricated) and to
-  separate retrieval bugs from generation bugs quickly — not as a substitute
+  separate retrieval bugs from generation bugs quickly, not as a substitute
   for human review or an entailment-model-based factuality check.
 
 ## Security
@@ -322,6 +393,10 @@ do not run it against untrusted dataset paths from an untrusted source
 without review. Report security issues privately via
 [GitHub security advisories](https://github.com/hellpuffyt/rag-eval/security/advisories/new)
 (see [SECURITY.md](SECURITY.md)).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
